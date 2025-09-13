@@ -1,0 +1,11 @@
+# Sample config for TypeMaster Pro
+defaultMode = "time"
+allowCorrections = true
+saveHistory = true
+
+[keybindings]
+restart = "tab+enter"
+commandPalette = "escape"
+
+[wordlists]
+english = "~/.typemaster/wordlists/english.txt"
