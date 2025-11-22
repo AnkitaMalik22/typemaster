@@ -5,9 +5,11 @@ module.exports = function parseCLI() {
   let cliMode = null;
   let cliSeconds = 30;
   let cliCount = 50;
-  let cliPunctuation = true;
+  let cliPunctuation = false;
   let cliNumbers = false;
   let cliZen = false;
+  let cliSuddenDeath = false;
+  let cliTheme = null;
   let cliLoad = null;
   let cliExport = null;
 
@@ -22,11 +24,20 @@ module.exports = function parseCLI() {
       case '--count':
         cliCount = parseInt(args[++i]);
         break;
-      case '--no-punctuation':
-        cliPunctuation = false;
+      case '--punctuation':
+        cliPunctuation = true;
+        break;
+      case '--numbers':
+        cliNumbers = true;
         break;
       case '--zen':
         cliZen = true;
+        break;
+      case '--sudden-death':
+        cliSuddenDeath = true;
+        break;
+      case '--theme':
+        cliTheme = args[++i];
         break;
       case '--load':
         cliLoad = args[++i];
@@ -37,5 +48,5 @@ module.exports = function parseCLI() {
     }
   }
 
-  return { cliMode, cliSeconds, cliCount, cliPunctuation, cliNumbers, cliZen, cliLoad, cliExport };
+  return { cliMode, cliSeconds, cliCount, cliPunctuation, cliNumbers, cliZen, cliSuddenDeath, cliTheme, cliLoad, cliExport };
 }
