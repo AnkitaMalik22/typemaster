@@ -28,7 +28,7 @@ const header = blessed.box({
 });
 
 
-  
+
 
 // Force enable colors for cmd.exe compatibility
 if (process.platform === 'win32') {
@@ -76,8 +76,8 @@ const theme = {
   current: 'white',    // White
   text: 'white',      // Off-white text
   subtext: 'gray'     // Gray subtext
-  
-// ...existing code...
+
+  // ...existing code...
 }
 // Initialize function should be at the end of the file
 function init() {
@@ -98,12 +98,12 @@ function init() {
   }, 200);
 }
 
-  
-  // Key event handlers
-  screen.key(['C-c'], () => {
-    if (db) db.close();
-    process.exit(0);
-  });
+
+// Key event handlers
+screen.key(['C-c'], () => {
+  if (db) db.close();
+  process.exit(0);
+});
 
 // Logo
 const logo = blessed.text({
@@ -393,7 +393,7 @@ function getTestInfoText() {
 // Update mode button styles
 function updateModeButtons() {
   const buttons = { time: timeBtn, words: wordsBtn, quote: quoteBtn, zen: zenBtn };
-  
+
   Object.keys(buttons).forEach(mode => {
     const btn = buttons[mode];
     if (mode === currentMode) {
@@ -404,7 +404,7 @@ function updateModeButtons() {
       btn.style.bg = theme.bg;
     }
   });
-  
+
   testInfo.setContent(getTestInfoText());
 }
 
@@ -415,7 +415,7 @@ function startTimer() {
     timerInterval = setInterval(() => {
       timeRemaining--;
       timerDisplay.setContent(`${timeRemaining}`);
-      
+
       if (timeRemaining <= 0) {
         endTest();
       }
@@ -430,10 +430,10 @@ function endTest() {
     clearInterval(timerInterval);
     timerInterval = null;
   }
-  
+
   testCompleted = true;
-  const stats = calculateStats();
-  
+  const stats = calculateStats(userInput, startTime, errors);
+
   if (db && config.saveHistory) {
     try {
       const stmt = db.prepare('INSERT INTO tests (timestamp, mode, wpm, cpm, accuracy, duration, errors) VALUES (?, ?, ?, ?, ?, ?, ?)');
@@ -442,7 +442,7 @@ function endTest() {
       // Ignore DB errors
     }
   }
-  
+
   showResults(stats);
 }
 
@@ -460,7 +460,7 @@ Duration: ${stats.duration.toFixed(1)}s
 Press Enter to continue
 Press R to restart
 `;
-  
+
   resultsModal.setContent(content);
   resultsModal.show();
   resultsModal.focus();
@@ -473,23 +473,23 @@ function updateTypingDisplay() {
     typingArea.setContent(''); // No target text in zen mode
     return;
   }
-  
+
   if (!targetText || targetText.length === 0) {
     typingArea.setContent('No text available. Please try a different mode.');
     return;
   }
-  
+
   let displayText = '';
   const words = targetText.split(' ');
   let charIndex = 0;
-  
+
   for (let wordIndex = 0; wordIndex < Math.min(words.length, 20); wordIndex++) {
     const word = words[wordIndex];
     let wordDisplay = '';
-    
+
     for (let i = 0; i < word.length; i++) {
       const char = word[i];
-      
+
       if (charIndex < userInput.length) {
         if (userInput[charIndex] === char) {
           wordDisplay += chalk.green(char); // Correct: green
@@ -503,9 +503,9 @@ function updateTypingDisplay() {
       }
       charIndex++;
     }
-    
+
     displayText += wordDisplay;
-    
+
     if (wordIndex < words.length - 1) {
       if (charIndex < userInput.length) {
         if (userInput[charIndex] === ' ') {
@@ -520,13 +520,13 @@ function updateTypingDisplay() {
       }
       charIndex++;
     }
-    
+
     // Add line breaks for better readability
     if (wordIndex > 0 && wordIndex % 8 === 0) {
       displayText += '\n';
     }
   }
-  
+
   typingArea.setContent(displayText);
 }
 
@@ -681,7 +681,7 @@ screen.on('keypress', (ch, key) => {
 // Command palette handlers
 commandPalette.on('submit', (value) => {
   const cmd = value.toLowerCase().trim();
-  
+
   switch (cmd) {
     case 'restart':
     case 'reset':
@@ -723,7 +723,7 @@ commandPalette.on('submit', (value) => {
       // Show available commands
       break;
   }
-  
+
   commandPalette.hide();
   screen.render();
 });

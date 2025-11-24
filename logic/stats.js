@@ -1,7 +1,12 @@
 // Statistics calculation and formatting
-function calculateStats(userInput, startTime, errors) {
+function calculateStats(userInput = '', startTime = Date.now(), errors = 0) {
+  // Safety checks
+  if (!userInput) userInput = '';
+  if (!startTime) startTime = Date.now();
+  if (errors === undefined || errors === null) errors = 0;
+
   const endTime = Date.now();
-  const duration = startTime ? (endTime - startTime) / 1000 : 0;
+  const duration = (endTime - startTime) / 1000;
   const charsTyped = userInput.length;
   const wordsTyped = charsTyped / 5;
   const wpm = duration > 0 ? (wordsTyped / (duration / 60)) : 0;

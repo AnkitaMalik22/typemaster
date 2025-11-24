@@ -13,7 +13,13 @@
 - **Sudden Death Mode**: A hardcore mode where the test ends immediately upon the first error. Toggle via Command Palette or `--sudden-death` flag.
 - **CLI Flags**: Added `--theme [name]` and `--sudden-death` flags.
 
-## [2.0.0] - Neovim Edition
+## [2.0.2] - Bug Fixes
+
+### Fixed
+- Crash when test ends due to missing arguments in stats calculation.
+- Added safety checks for stats calculation.
+
+## [2.0.1] - Documentation
 
 ### Added
 - **Neovim-inspired UI**: Minimalist interface with a powerline-style status bar.
