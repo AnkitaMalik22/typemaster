@@ -13,6 +13,14 @@
 - **Sudden Death Mode**: A hardcore mode where the test ends immediately upon the first error. Toggle via Command Palette or `--sudden-death` flag.
 - **CLI Flags**: Added `--theme [name]` and `--sudden-death` flags.
 
+## [2.0.3] - Infinite Scroll
+
+### Added
+- **Infinite Scroll for Time Mode**: Text now auto-generates as you type in Time Mode, so you never run out of words.
+
+### Fixed
+- Restored Neovim UI that was accidentally reverted.
+
 ## [2.0.2] - Bug Fixes
 
 ### Fixed

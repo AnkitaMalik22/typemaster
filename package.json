@@ -1,6 +1,6 @@
 {
   "name": "typemaster-pro",
-  "version": "2.0.2",
+  "version": "2.0.3",
   "description": "Neovim-inspired terminal typing test with themes, analytics, and challenge modes.",
   "main": "index.js",
   "bin": {

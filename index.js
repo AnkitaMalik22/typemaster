@@ -1,34 +1,14 @@
 #!/usr/bin/env node
 
-
 const blessed = require('blessed');
 const chalk = require('chalk');
 const parseCLI = require('./cli');
 const { loadConfig } = require('./config');
-const { initDB, saveTest } = require('./database');
+const { initDB } = require('./database');
 const { generateText } = require('./logic/text-generation');
 const { calculateStats } = require('./logic/stats');
 const { handleInput } = require('./logic/typing');
 const fs = require('fs');
-const path = require('path');
-const os = require('os');
-const screen = blessed.screen({
-  smartCSR: true,
-  title: 'typemaster - Terminal Typing Test',
-});
-const header = blessed.box({
-  top: 0,
-  left: 0,
-  width: '100%',
-  height: 5,
-  style: {
-    bg: 'black',
-    fg: 'white'
-  }
-});
-
-
-
 
 // Force enable colors for cmd.exe compatibility
 if (process.platform === 'win32') {
@@ -41,12 +21,56 @@ const cli = parseCLI();
 const config = loadConfig();
 const db = initDB();
 
+// Theme Definitions
+const themes = {
+  tokyo: {
+    bg: '#1a1b26', fg: '#c0caf5', primary: '#7aa2f7', secondary: '#bb9af7',
+    accent: '#ff9e64', correct: '#9ece6a', incorrect: '#f7768e',
+    cursor: '#c0caf5', cursorBg: '#414868', subtext: '#565f89',
+    statusBg: '#7aa2f7', statusFg: '#1a1b26'
+  },
+  dracula: {
+    bg: '#282a36', fg: '#f8f8f2', primary: '#bd93f9', secondary: '#ff79c6',
+    accent: '#ffb86c', correct: '#50fa7b', incorrect: '#ff5555',
+    cursor: '#f8f8f2', cursorBg: '#44475a', subtext: '#6272a4',
+    statusBg: '#bd93f9', statusFg: '#282a36'
+  },
+  gruvbox: {
+    bg: '#282828', fg: '#ebdbb2', primary: '#fabd2f', secondary: '#d3869b',
+    accent: '#fe8019', correct: '#b8bb26', incorrect: '#fb4934',
+    cursor: '#ebdbb2', cursorBg: '#504945', subtext: '#928374',
+    statusBg: '#fabd2f', statusFg: '#282828'
+  },
+  monokai: {
+    bg: '#272822', fg: '#f8f8f2', primary: '#a6e22e', secondary: '#ae81ff',
+    accent: '#fd971f', correct: '#a6e22e', incorrect: '#f92672',
+    cursor: '#f8f8f2', cursorBg: '#49483e', subtext: '#75715e',
+    statusBg: '#a6e22e', statusFg: '#272822'
+  }
+};
+
+let currentTheme = themes.tokyo; // Default
+let theme = currentTheme; // Alias
+
+// Screen Setup
+const screen = blessed.screen({
+  smartCSR: true,
+  title: 'TypeMaster Pro',
+  fullUnicode: true,
+  style: {
+    bg: theme.bg,
+    fg: theme.fg
+  }
+});
+
+// State Variables
 let currentMode = cli.cliMode || config.defaultMode || 'time';
 let timeLimit = cli.cliSeconds || 30;
-let wordLimit = cli.cliCount;
-let punctuation = cli.cliPunctuation;
-let numbers = cli.cliNumbers;
-let zenMode = cli.cliZen;
+let wordLimit = cli.cliCount || 50;
+let punctuation = cli.cliPunctuation || false;
+let numbers = cli.cliNumbers || false;
+let zenMode = cli.cliZen || false;
+let suddenDeath = cli.cliSuddenDeath || false;
 let customText = '';
 let startTime = null;
 let userInput = '';
@@ -55,6 +79,7 @@ let targetText = '';
 let testCompleted = false;
 let timeRemaining = timeLimit;
 let timerInterval = null;
+let wpmHistory = [];
 
 if (cli.cliLoad) {
   try {
@@ -66,365 +91,288 @@ if (cli.cliLoad) {
   }
 }
 
-// Theme colors (simplified for better terminal compatibility)
-const theme = {
-  bg: 'black',
-  primary: 'yellow',    // Yellow accent like Monkeytype
-  secondary: 'blue',   // blue
-  correct: 'green',    // Light green
-  incorrect: 'red',    // Light red
-  current: 'white',    // White
-  text: 'white',      // Off-white text
-  subtext: 'gray'     // Gray subtext
-
-  // ...existing code...
-}
-// Initialize function should be at the end of the file
-function init() {
-  // Show/hide stats panel based on zen mode
-  if (zenMode) {
-    statsPanel.hide();
-  } else {
-    statsPanel.show();
-  }
-  updateModeButtons();
-  resetTest();
-  // Ensure initial render with a small delay
-  setTimeout(() => {
-    screen.render();
-    setTimeout(() => {
-      screen.render();
-    }, 100);
-  }, 200);
+// Apply CLI Theme
+if (cli.cliTheme && themes[cli.cliTheme]) {
+  currentTheme = themes[cli.cliTheme];
+  theme = currentTheme;
 }
 
+// UI Components
 
-// Key event handlers
-screen.key(['C-c'], () => {
-  if (db) db.close();
-  process.exit(0);
-});
-
-// Logo
-const logo = blessed.text({
-  parent: header,
-  top: 1,
-  left: 2,
-  content: '🚀 typemaster',
-  style: {
-    fg: theme.primary,
-    bold: true
-  }
-});
-
-// Mode selector buttons
-const modeSelector = blessed.box({
-  parent: header,
-  top: 1,
-  left: 'center',
-  width: 40,
-  height: 2,
-  style: {
-    bg: theme.bg
-  }
-});
-
-// Individual mode buttons
-const timeBtn = blessed.text({
-  parent: modeSelector,
+const mainContainer = blessed.box({
   top: 0,
   left: 0,
-  width: 8,
-  height: 1,
-  content: ' time ',
-  style: {
-    fg: currentMode === 'time' ? theme.primary : theme.secondary,
-    bg: currentMode === 'time' ? theme.secondary : theme.bg
-  },
-  clickable: true
-});
-
-const wordsBtn = blessed.text({
-  parent: modeSelector,
-  top: 0,
-  left: 10,
-  width: 8,
-  height: 1,
-  content: ' words ',
-  style: {
-    fg: currentMode === 'words' ? theme.primary : theme.secondary,
-    bg: currentMode === 'words' ? theme.secondary : theme.bg
-  },
-  clickable: true
-});
-
-const quoteBtn = blessed.text({
-  parent: modeSelector,
-  top: 0,
-  left: 20,
-  width: 8,
-  height: 1,
-  content: ' quote ',
-  style: {
-    fg: currentMode === 'quote' ? theme.primary : theme.secondary,
-    bg: currentMode === 'quote' ? theme.secondary : theme.bg
-  },
-  clickable: true
-});
-
-const zenBtn = blessed.text({
-  parent: modeSelector,
-  top: 0,
-  left: 30,
-  width: 6,
-  height: 1,
-  content: ' zen ',
-  style: {
-    fg: currentMode === 'zen' ? theme.primary : theme.secondary,
-    bg: currentMode === 'zen' ? theme.secondary : theme.bg
-  },
-  clickable: true
-});
-
-// Main typing area container
-const mainContainer = blessed.box({
-  top: 6,
-  left: 'center',
-  width: '80%',
-  height: '60%',
+  width: '100%',
+  height: '100%',
   style: {
     bg: theme.bg
   }
 });
 
-// Timer/Counter display
-const timerDisplay = blessed.text({
+const title = blessed.text({
   parent: mainContainer,
-  top: 0,
-  left: 'center',
-  width: '100%',
-  height: 3,
-  content: timeLimit.toString(),
-  align: 'center',
-  valign: 'middle',
+  top: 1,
+  left: 2,
+  content: 'TYPE MASTER',
   style: {
-    fg: theme.primary,
+    fg: theme.subtext,
+    bg: theme.bg,
     bold: true
   }
 });
 
-// Test info (mode, settings)
-const testInfo = blessed.text({
+const timerDisplay = blessed.text({
   parent: mainContainer,
-  top: 4,
+  top: 2,
   left: 'center',
-  width: '90%',
+  width: 'shrink',
   height: 1,
-  content: getTestInfoText(),
-  align: 'center',
+  content: timeLimit.toString(),
   style: {
-    fg: theme.subtext
+    fg: theme.primary,
+    bg: theme.bg,
+    bold: true
   }
 });
 
-// Typing area with better spacing
 const typingArea = blessed.box({
   parent: mainContainer,
-  top: 8,
+  top: 'center',
   left: 'center',
-  width: '90%',
-  height: 12, // Increased height for better text display
+  width: '80%',
+  height: '50%',
   style: {
     bg: theme.bg,
-    fg: theme.text
+    fg: theme.fg
   },
   align: 'center',
   valign: 'middle',
   wrap: true,
-  scrollable: true // Allow scrolling for long text
+  tags: true
 });
 
-// Stats panel (hidden in zen mode)
-const statsPanel = blessed.box({
-  top: '75%',
-  left: 'center',
-  width: '70%',
-  height: 8,
-  style: {
-    bg: theme.bg,
-    fg: theme.text
-  },
-  align: 'center',
-  hidden: zenMode
-});
-
-// Individual stat boxes
-const wpmStat = blessed.box({
-  parent: statsPanel,
-  top: 0,
-  left: 0,
-  width: '25%',
-  height: '100%',
-  content: 'wpm\n0',
-  align: 'center',
-  valign: 'middle',
-  style: {
-    fg: theme.text
-  }
-});
-
-const cpmStat = blessed.box({
-  parent: statsPanel,
-  top: 0,
-  left: '25%',
-  width: '25%',
-  height: '100%',
-  content: 'cpm\n0',
-  align: 'center',
-  valign: 'middle',
-  style: {
-    fg: theme.text
-  }
-});
-
-const accuracyStat = blessed.box({
-  parent: statsPanel,
-  top: 0,
-  left: '50%',
-  width: '25%',
-  height: '100%',
-  content: 'acc\n100%',
-  align: 'center',
-  valign: 'middle',
-  style: {
-    fg: theme.text
-  }
-});
-
-const errorStat = blessed.box({
-  parent: statsPanel,
-  top: 0,
-  left: '75%',
-  width: '25%',
-  height: '100%',
-  content: 'errors\n0',
-  align: 'center',
-  valign: 'middle',
-  style: {
-    fg: theme.text
-  }
-});
-
-// Footer with shortcuts
-const footer = blessed.box({
+const statusLine = blessed.box({
+  parent: mainContainer,
   bottom: 0,
   left: 0,
   width: '100%',
-  height: 2,
+  height: 1,
   style: {
-    bg: theme.bg,
-    fg: theme.subtext
+    bg: theme.statusBg,
+    fg: theme.statusFg
   },
-  content: ' tab + enter - restart test   |   esc - quit   |   ctrl+shift+p - command palette',
-  align: 'center'
+  tags: true
 });
 
-// Command palette
-const commandPalette = blessed.prompt({
+const commandPalette = blessed.textbox({
+  parent: screen,
   top: 'center',
   left: 'center',
-  width: '60%',
-  height: 8,
+  width: '50%',
+  height: 3,
   style: {
-    bg: theme.secondary,
-    fg: theme.text,
-    focus: {
-      bg: theme.primary
+    bg: theme.bg,
+    fg: theme.fg,
+    border: {
+      fg: theme.primary
     }
   },
   border: {
-    type: 'line',
-    fg: theme.primary
+    type: 'line'
   },
   label: ' Command Palette ',
-  hidden: true
+  hidden: true,
+  inputOnFocus: true
 });
 
-// Results modal
 const resultsModal = blessed.box({
+  parent: screen,
   top: 'center',
   left: 'center',
-  width: 50,
-  height: 15,
+  width: 70,
+  height: 25,
   style: {
-    bg: theme.secondary,
-    fg: theme.text
+    bg: theme.bg,
+    fg: theme.fg,
+    border: {
+      fg: theme.correct
+    }
   },
   border: {
-    type: 'line',
-    fg: theme.primary
+    type: 'line'
   },
-  label: ' Test Results ',
-  hidden: true
+  label: ' Results ',
+  hidden: true,
+  tags: true,
+  align: 'center',
+  valign: 'middle',
+  scrollable: true,
+  alwaysScroll: true,
+  scrollbar: {
+    ch: ' ',
+    bg: theme.subtext
+  }
 });
 
-// Append elements to screen
-screen.append(header);
 screen.append(mainContainer);
-screen.append(statsPanel);
-screen.append(footer);
-screen.append(commandPalette);
-screen.append(resultsModal);
 
-// ...existing code...
+// Logic Functions
 
-// Get test info text
+function applyTheme(newThemeName) {
+  if (themes[newThemeName]) {
+    currentTheme = themes[newThemeName];
+    theme = currentTheme;
+
+    screen.style.bg = theme.bg;
+    screen.style.fg = theme.fg;
+
+    mainContainer.style.bg = theme.bg;
+
+    title.style.fg = theme.subtext;
+    title.style.bg = theme.bg;
+
+    timerDisplay.style.fg = theme.primary;
+    timerDisplay.style.bg = theme.bg;
+
+    typingArea.style.bg = theme.bg;
+    typingArea.style.fg = theme.fg;
+
+    statusLine.style.bg = theme.statusBg;
+    statusLine.style.fg = theme.statusFg;
+
+    commandPalette.style.bg = theme.bg;
+    commandPalette.style.fg = theme.fg;
+    commandPalette.style.border.fg = theme.primary;
+
+    resultsModal.style.bg = theme.bg;
+    resultsModal.style.fg = theme.fg;
+    resultsModal.style.border.fg = theme.correct;
+
+    screen.render();
+  }
+}
+
 function getTestInfoText() {
   let info = `${currentMode}`;
   if (currentMode === 'time') info += ` ${timeLimit}s`;
   if (currentMode === 'words') info += ` ${wordLimit}`;
-  if (punctuation) info += ' | punctuation';
-  if (numbers) info += ' | numbers';
+  if (punctuation) info += ' +punc';
+  if (numbers) info += ' +num';
+  if (suddenDeath) info += ' {red-fg}DEATH{/red-fg}';
   return info;
 }
 
-// ...existing code...
+function updateStatusLine(stats = null) {
+  const modeStr = ` ${currentMode.toUpperCase()} `;
+  const timeStr = ` ${timeRemaining}s `;
 
-// Update mode button styles
-function updateModeButtons() {
-  const buttons = { time: timeBtn, words: wordsBtn, quote: quoteBtn, zen: zenBtn };
+  let statsStr = '';
+  if (stats) {
+    statsStr = ` WPM: ${stats.wpm.toFixed(0)} | ACC: ${stats.accuracy.toFixed(0)}% | ERR: ${stats.errors} `;
+  } else {
+    statsStr = ` WPM: 0 | ACC: 100% | ERR: 0 `;
+  }
 
-  Object.keys(buttons).forEach(mode => {
-    const btn = buttons[mode];
-    if (mode === currentMode) {
-      btn.style.fg = theme.primary;
-      btn.style.bg = theme.secondary;
-    } else {
-      btn.style.fg = theme.secondary;
-      btn.style.bg = theme.bg;
-    }
-  });
+  const infoStr = ` ${getTestInfoText()} `;
+  const helpStr = ` TAB: Restart | ESC: Quit | C-s-p: Cmds `;
 
-  testInfo.setContent(getTestInfoText());
+  const left = `{bold}${modeStr}{/bold}|${timeStr}|${statsStr}`;
+  const right = `${infoStr}|${helpStr}`;
+
+  const totalLen = screen.cols;
+  const contentLen = (modeStr + timeStr + statsStr + infoStr + helpStr).length + 10;
+  const padding = ' '.repeat(Math.max(0, totalLen - contentLen));
+
+  statusLine.setContent(`${left}${padding}${right}`);
 }
 
-// Start timer for time mode
+function updateTypingDisplay() {
+  if (!targetText) {
+    typingArea.setContent('{center}No text available.{/center}');
+    return;
+  }
+
+  let displayText = '';
+  const words = targetText.split(' ');
+  let charIndex = 0;
+
+  const displayLimit = Math.min(words.length, 60);
+
+  for (let wordIndex = 0; wordIndex < displayLimit; wordIndex++) {
+    const word = words[wordIndex];
+    let wordDisplay = '';
+
+    for (let i = 0; i < word.length; i++) {
+      const char = word[i];
+
+      if (charIndex < userInput.length) {
+        if (userInput[charIndex] === char) {
+          wordDisplay += chalk.hex(theme.correct)(char);
+        } else {
+          wordDisplay += chalk.hex(theme.incorrect)(char);
+        }
+      } else if (charIndex === userInput.length) {
+        wordDisplay += chalk.bgHex(theme.cursor).hex(theme.bg)(char);
+      } else {
+        wordDisplay += chalk.hex(theme.subtext)(char);
+      }
+      charIndex++;
+    }
+
+    displayText += wordDisplay;
+
+    if (wordIndex < words.length - 1) {
+      if (charIndex < userInput.length) {
+        if (userInput[charIndex] === ' ') {
+          displayText += chalk.hex(theme.correct)(' ');
+        } else {
+          displayText += chalk.bgHex(theme.incorrect)(' ');
+        }
+      } else if (charIndex === userInput.length) {
+        displayText += chalk.bgHex(theme.cursor).hex(theme.bg)(' ');
+      } else {
+        displayText += ' ';
+      }
+      charIndex++;
+    }
+
+    if (wordIndex > 0 && wordIndex % 12 === 0) {
+      displayText += '\n';
+    }
+  }
+
+  typingArea.setContent(displayText);
+}
+
+function updateUI() {
+  updateTypingDisplay();
+  if (startTime && !testCompleted) {
+    const stats = calculateStats(userInput, startTime, errors);
+    updateStatusLine(stats);
+  } else {
+    updateStatusLine();
+  }
+  screen.render();
+}
+
 function startTimer() {
   if (currentMode === 'time' && !timerInterval) {
     timeRemaining = timeLimit;
     timerInterval = setInterval(() => {
       timeRemaining--;
       timerDisplay.setContent(`${timeRemaining}`);
+      const currentStats = calculateStats(userInput, startTime, errors);
+      wpmHistory.push(currentStats.wpm);
+      updateStatusLine(currentStats);
+      screen.render();
 
       if (timeRemaining <= 0) {
         endTest();
       }
-      screen.render();
     }, 1000);
   }
 }
 
-// End test
 function endTest() {
   if (timerInterval) {
     clearInterval(timerInterval);
@@ -439,26 +387,84 @@ function endTest() {
       const stmt = db.prepare('INSERT INTO tests (timestamp, mode, wpm, cpm, accuracy, duration, errors) VALUES (?, ?, ?, ?, ?, ?, ?)');
       stmt.run(new Date().toISOString(), currentMode, stats.wpm, stats.cpm, stats.accuracy, stats.duration, stats.errors);
     } catch (e) {
-      // Ignore DB errors
+      // Ignore
     }
   }
 
   showResults(stats);
 }
 
-// Show results modal
+function generateChart(data, height = 8, width = 55) {
+  if (!data || data.length < 2) return '{center}{yellow-fg}Not enough data for chart{/yellow-fg}{/center}';
+
+  // Downsample if too much data
+  let displayData = data;
+  if (data.length > width) {
+    const step = data.length / width;
+    displayData = [];
+    for (let i = 0; i < width; i++) {
+      const start = Math.floor(i * step);
+      const end = Math.floor((i + 1) * step);
+      const chunk = data.slice(start, end);
+      const avg = chunk.reduce((a, b) => a + b, 0) / (chunk.length || 1);
+      displayData.push(avg);
+    }
+  }
+
+  const max = Math.max(...displayData);
+  const min = Math.min(...displayData);
+  const range = max - min || 1;
+
+  const blocks = [' ', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+  const chartRows = [];
+
+  for (let h = height - 1; h >= 0; h--) {
+    let row = '';
+    // Y-Axis Label
+    if (h === height - 1) row += `${max.toFixed(0).padStart(3)} ┤`;
+    else if (h === 0) row += `${min.toFixed(0).padStart(3)} ┤`;
+    else row += '    │';
+
+    for (let i = 0; i < displayData.length; i++) {
+      const val = displayData[i];
+      const normalized = (val - min) / range;
+      const scaledVal = normalized * height;
+      const rowVal = scaledVal - h;
+
+      if (rowVal >= 1) {
+        row += '█';
+      } else if (rowVal > 0) {
+        const blockIndex = Math.floor(rowVal * (blocks.length - 1));
+        row += blocks[blockIndex];
+      } else {
+        row += ' ';
+      }
+    }
+    chartRows.push(row);
+  }
+
+  chartRows.push('    └' + '─'.repeat(displayData.length));
+
+  return '{cyan-fg}' + chartRows.join('\n') + '{/cyan-fg}';
+}
+
 function showResults(stats) {
+  const chart = generateChart(wpmHistory);
+
   const content = `
-Test Completed!
+{center}{bold}Test Completed!{/bold}{/center}
 
-WPM: ${stats.wpm.toFixed(1)}
-CPM: ${stats.cpm.toFixed(1)}
+{center}
+WPM:      {bold}{green-fg}${stats.wpm.toFixed(1)}{/green-fg}{/bold}
+CPM:      ${stats.cpm.toFixed(1)}
 Accuracy: ${stats.accuracy.toFixed(1)}%
-Errors: ${stats.errors}
-Duration: ${stats.duration.toFixed(1)}s
+Errors:   ${stats.errors}
+Time:     ${stats.duration.toFixed(1)}s
+{/center}
 
-Press Enter to continue
-Press R to restart
+${chart}
+
+{center}Press {bold}Enter{/bold} or {bold}Tab{/bold} to restart{/center}
 `;
 
   resultsModal.setContent(content);
@@ -467,89 +473,6 @@ Press R to restart
   screen.render();
 }
 
-// Update typing display with better visual feedback
-function updateTypingDisplay() {
-  if (zenMode) {
-    typingArea.setContent(''); // No target text in zen mode
-    return;
-  }
-
-  if (!targetText || targetText.length === 0) {
-    typingArea.setContent('No text available. Please try a different mode.');
-    return;
-  }
-
-  let displayText = '';
-  const words = targetText.split(' ');
-  let charIndex = 0;
-
-  for (let wordIndex = 0; wordIndex < Math.min(words.length, 20); wordIndex++) {
-    const word = words[wordIndex];
-    let wordDisplay = '';
-
-    for (let i = 0; i < word.length; i++) {
-      const char = word[i];
-
-      if (charIndex < userInput.length) {
-        if (userInput[charIndex] === char) {
-          wordDisplay += chalk.green(char); // Correct: green
-        } else {
-          wordDisplay += chalk.red(char); // Incorrect: red
-        }
-      } else if (charIndex === userInput.length) {
-        wordDisplay += chalk.bgWhite.black(char); // Current: highlighted
-      } else {
-        wordDisplay += chalk.cyan(char); // Un-typed: cyan
-      }
-      charIndex++;
-    }
-
-    displayText += wordDisplay;
-
-    if (wordIndex < words.length - 1) {
-      if (charIndex < userInput.length) {
-        if (userInput[charIndex] === ' ') {
-          displayText += chalk.green(' '); // Correct space: green
-        } else {
-          displayText += chalk.red(' '); // Incorrect space: red
-        }
-      } else if (charIndex === userInput.length) {
-        displayText += chalk.bgWhite.black(' '); // Current space: highlighted
-      } else {
-        displayText += chalk.cyan(' '); // Un-typed space: cyan
-      }
-      charIndex++;
-    }
-
-    // Add line breaks for better readability
-    if (wordIndex > 0 && wordIndex % 8 === 0) {
-      displayText += '\n';
-    }
-  }
-
-  typingArea.setContent(displayText);
-}
-
-// Update real-time stats
-function updateStats() {
-  if (zenMode || !startTime) return;
-  const stats = calculateStats(userInput, startTime, errors);
-  wpmStat.setContent(`wpm\n${stats.wpm.toFixed(1)}`);
-  cpmStat.setContent(`cpm\n${stats.cpm.toFixed(1)}`);
-  accuracyStat.setContent(`acc\n${stats.accuracy.toFixed(1)}%`);
-  errorStat.setContent(`errors\n${errors}`);
-}
-
-// Update UI
-function updateUI() {
-  updateTypingDisplay();
-  updateStats();
-  screen.render();
-  setTimeout(() => {
-    screen.render();
-  }, 50);
-}
-
 function resetTest() {
   if (timerInterval) {
     clearInterval(timerInterval);
@@ -558,44 +481,27 @@ function resetTest() {
   userInput = '';
   startTime = null;
   errors = 0;
+  wpmHistory = [];
   testCompleted = false;
   timeRemaining = timeLimit;
   targetText = generateText(currentMode, wordLimit, punctuation, numbers, customText);
+
   timerDisplay.setContent(currentMode === 'time' ? `${timeLimit}` : `0`);
-  wpmStat.setContent('wpm\n0');
-  cpmStat.setContent('cpm\n0');
-  accuracyStat.setContent('acc\n100%');
-  errorStat.setContent('errors\n0');
   resultsModal.hide();
   updateUI();
 }
 
-function init() {
-  if (zenMode) {
-    statsPanel.hide();
-  } else {
-    statsPanel.show();
-  }
-  updateModeButtons();
-  resetTest();
-  setTimeout(() => {
-    screen.render();
-    setTimeout(() => {
-      screen.render();
-    }, 100);
-  }, 200);
-}
+// Event Handlers
 
-// Start the application
-init();
-
-// Key event handlers
 screen.key(['C-c'], () => {
   if (db) db.close();
   process.exit(0);
 });
 
 screen.key(['tab', 'enter'], () => {
+  if (resultsModal.visible) {
+    resultsModal.hide();
+  }
   resetTest();
 });
 
@@ -603,6 +509,9 @@ screen.key(['escape'], () => {
   if (resultsModal.visible) {
     resultsModal.hide();
     resetTest();
+  } else if (commandPalette.visible) {
+    commandPalette.hide();
+    screen.render();
   } else {
     if (db) db.close();
     process.exit(0);
@@ -611,150 +520,105 @@ screen.key(['escape'], () => {
 
 screen.key(['C-S-p'], () => {
   if (!commandPalette.visible) {
+    commandPalette.setValue('');
     commandPalette.show();
     commandPalette.focus();
     screen.render();
   }
 });
 
-// Results modal key handlers
-resultsModal.key(['enter', 'r'], () => {
-  resultsModal.hide();
+commandPalette.on('submit', (value) => {
+  const cmd = value.toLowerCase().trim();
+
+  if (cmd.includes('time')) {
+    currentMode = 'time';
+    const args = cmd.split(' ');
+    if (args[1] && !isNaN(args[1])) timeLimit = parseInt(args[1]);
+  } else if (cmd.includes('words')) {
+    currentMode = 'words';
+    const args = cmd.split(' ');
+    if (args[1] && !isNaN(args[1])) wordLimit = parseInt(args[1]);
+  } else if (cmd.includes('quote')) {
+    currentMode = 'quote';
+  } else if (cmd.includes('zen')) {
+    currentMode = 'zen';
+    zenMode = true;
+  } else if (cmd === 'punc' || cmd === 'punctuation') {
+    punctuation = !punctuation;
+  } else if (cmd === 'num' || cmd === 'numbers') {
+    numbers = !numbers;
+  } else if (cmd === 'quit' || cmd === 'exit') {
+    process.exit(0);
+  } else if (cmd === 'sudden death' || cmd === 'death') {
+    suddenDeath = !suddenDeath;
+  } else if (cmd.startsWith('theme ')) {
+    const themeName = cmd.split(' ')[1];
+    applyTheme(themeName);
+  } else if (themes[cmd]) {
+    applyTheme(cmd);
+  }
+
+  commandPalette.hide();
   resetTest();
 });
 
-// Mode button click handlers
-timeBtn.on('click', () => {
-  currentMode = 'time';
-  zenMode = false;
-  statsPanel.show();
-  updateModeButtons();
-  resetTest();
+commandPalette.key(['escape'], () => {
+  commandPalette.hide();
+  screen.render();
 });
 
-wordsBtn.on('click', () => {
-  currentMode = 'words';
-  zenMode = false;
-  statsPanel.show();
-  updateModeButtons();
-  resetTest();
-});
-
-quoteBtn.on('click', () => {
-  currentMode = 'quote';
-  zenMode = false;
-  statsPanel.show();
-  updateModeButtons();
-  resetTest();
-});
-
-zenBtn.on('click', () => {
-  currentMode = 'zen';
-  zenMode = true;
-  statsPanel.hide();
-  updateModeButtons();
-  resetTest();
-});
-
-// Main input handler
 screen.on('keypress', (ch, key) => {
+  if (commandPalette.visible || resultsModal.visible) return;
   if (!targetText || testCompleted) return;
+
   if (key.name === 'tab' || key.name === 'escape' || (key.ctrl && key.shift && key.name === 'p')) return;
-  // Start test on first keypress
+
   if (!startTime) {
     startTime = Date.now();
-    if (currentMode === 'time') {
-      startTimer();
-    }
+    if (currentMode === 'time') startTimer();
   }
+
   const result = handleInput({ ch, key, userInput, targetText, errors, config });
+
+  // Sudden Death Check
+  if (suddenDeath && result.newErrors > errors) {
+    userInput = result.newInput;
+    errors = result.newErrors;
+    updateUI();
+
+    // Fail immediately
+    testCompleted = true;
+    if (timerInterval) clearInterval(timerInterval);
+
+    const content = `
+{center}{red-fg}{bold}SUDDEN DEATH!{/bold}{/red-fg}{/center}
+
+{center}You made a mistake.{/center}
+
+{center}Press {bold}Enter{/bold} to restart{/center}
+`;
+    resultsModal.setContent(content);
+    resultsModal.show();
+    resultsModal.focus();
+    screen.render();
+    return;
+  }
+
   userInput = result.newInput;
   errors = result.newErrors;
-  // Check completion
+
   if (userInput.length === targetText.length || (currentMode === 'words' && userInput.split(' ').length >= wordLimit)) {
     endTest();
     return;
   }
+
+  // Infinite Scroll (Zen & Time)
+  if ((currentMode === 'zen' || currentMode === 'time') && userInput.length > targetText.length - 50) {
+    const newText = generateText(currentMode, 20, punctuation, numbers);
+    targetText += ' ' + newText;
+  }
+
   updateUI();
 });
 
-// Command palette handlers
-commandPalette.on('submit', (value) => {
-  const cmd = value.toLowerCase().trim();
-
-  switch (cmd) {
-    case 'restart':
-    case 'reset':
-      resetTest();
-      break;
-    case 'toggle punctuation':
-      punctuation = !punctuation;
-      testInfo.setContent(getTestInfoText());
-      resetTest();
-      break;
-    case 'toggle numbers':
-      numbers = !numbers;
-      testInfo.setContent(getTestInfoText());
-      resetTest();
-      break;
-    case 'time mode':
-      currentMode = 'time';
-      updateModeButtons();
-      resetTest();
-      break;
-    case 'words mode':
-      currentMode = 'words';
-      updateModeButtons();
-      resetTest();
-      break;
-    case 'quote mode':
-      currentMode = 'quote';
-      updateModeButtons();
-      resetTest();
-      break;
-    case 'zen mode':
-      currentMode = 'zen';
-      zenMode = true;
-      statsPanel.hide();
-      updateModeButtons();
-      resetTest();
-      break;
-    default:
-      // Show available commands
-      break;
-  }
-
-  commandPalette.hide();
-  screen.render();
-});
-
-commandPalette.on('cancel', () => {
-  commandPalette.hide();
-  screen.render();
-});
-
-// Initialize
-function resetTest() {
-  if (timerInterval) {
-    clearInterval(timerInterval);
-    timerInterval = null;
-  }
-  userInput = '';
-  startTime = null;
-  errors = 0;
-  testCompleted = false;
-  timeRemaining = timeLimit;
-  targetText = generateText(currentMode, wordLimit, punctuation, numbers, customText);
-  timerDisplay.setContent(currentMode === 'time' ? `${timeLimit}` : `0`);
-  // Reset stats
-  wpmStat.setContent('wpm\n0');
-  cpmStat.setContent('cpm\n0');
-  accuracyStat.setContent('acc\n100%');
-  errorStat.setContent('errors\n0');
-  resultsModal.hide();
-  updateUI();
-}
-
-
-// Start the application
-init();
+resetTest();
