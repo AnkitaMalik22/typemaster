@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.0.4] - Critical Fixes
+
+### Fixed
+- **Crash on Test Completion**: Fixed a critical bug where the application would crash with `TypeError: Cannot read properties of undefined (reading 'length')` when calculating stats. Added robust type checking.
+
 ## [2.2.0] - Analytics & Polish
 
 ### Added

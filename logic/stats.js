@@ -1,7 +1,7 @@
 // Statistics calculation and formatting
 function calculateStats(userInput = '', startTime = Date.now(), errors = 0) {
   // Safety checks
-  if (!userInput) userInput = '';
+  if (typeof userInput !== 'string') userInput = '';
   if (!startTime) startTime = Date.now();
   if (errors === undefined || errors === null) errors = 0;
 

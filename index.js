@@ -468,6 +468,7 @@ ${chart}
 `;
 
   resultsModal.setContent(content);
+  resultsModal.setFront();  // Add this line
   resultsModal.show();
   resultsModal.focus();
   screen.render();
